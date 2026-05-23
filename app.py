@@ -208,10 +208,10 @@ class M3UCreatorApp(TkinterDnD.Tk):
 
         self.empty_label = ttk.Label(
             tree_wrap,
-            text="Arrastra aqui archivos o carpetas con MP3",
+            text="Arrastra aquí los archivos o carpetas con MP3",
             style="Pista.TLabel",
             justify="center",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 26, "bold"),
         )
         self.empty_label.place(relx=0.5, rely=0.5, anchor="center")
 
