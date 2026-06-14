@@ -98,6 +98,23 @@ def write_m3u(lines: list[str], target_file: Path, confirm_overwrite: bool = Tru
     return True
 
 
+def parse_m3u_file(m3u_path: Path) -> tuple[list[Path], list[Path]]:
+    """Parse an M3U file and return (existing_paths, missing_paths)."""
+    m3u_dir = m3u_path.resolve().parent
+    existing = []
+    missing = []
+    for line in m3u_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        resolved = (m3u_dir / line).resolve()
+        if resolved.exists():
+            existing.append(resolved)
+        else:
+            missing.append(resolved)
+    return existing, missing
+
+
 def find_usb_roots() -> list[Path]:
     removable = []
     if sys.platform == "win32":
@@ -136,6 +153,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self.m3u_name = tk.StringVar(value="lista")
         self.usb_var = tk.StringVar(value="")
         self.count_text = tk.StringVar(value="Canciones: 0")
+        self.source_m3u: Path | None = None
 
         self.drag_start_y = 0
         self.drag_candidate_index = None
@@ -173,6 +191,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         actions = ttk.Frame(main, style="Main.TFrame")
         actions.pack(fill="x", pady=(0, 6))
 
+        ttk.Button(actions, text="📂 Abrir M3U", command=self.load_m3u).pack(side="left", padx=(0, 12))
         ttk.Button(actions, text="✖ Eliminar", command=self.remove_selected).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="▲ Subir", command=self.move_up).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="▼ Bajar", command=self.move_down).pack(side="left", padx=(0, 12))
@@ -346,6 +365,40 @@ class M3UCreatorApp(TkinterDnD.Tk):
             random.shuffle(self.playlist_model)
         else:
             self.playlist_model.extend(new_files)
+        self._refresh_tree()
+
+    def _show_missing_files_dialog(self, missing: list[Path]) -> bool:
+        """Show dialog for missing files. Returns True to keep them, False to remove."""
+        if not missing:
+            return True
+        msg = "Se encontraron archivos que no existen:\n\n"
+        for p in missing[:15]:
+            msg += f"  - {p}\n"
+        if len(missing) > 15:
+            msg += f"  ... y {len(missing) - 15} mas\n"
+        msg += "\nDesea mantenerlos en la playlist?"
+        return messagebox.askyesno("Archivos faltantes", msg, icon="warning")
+
+    def load_m3u(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Listas M3U", "*.m3u"), ("Todos los archivos", "*.*")],
+        )
+        if not path:
+            return
+        m3u_path = Path(path)
+        existing, missing = parse_m3u_file(m3u_path)
+        if not existing and not missing:
+            messagebox.showinfo("Vacia", "El archivo M3U esta vacio o no contiene pistas validas.")
+            return
+        if missing:
+            keep = self._show_missing_files_dialog(missing)
+            if not keep:
+                missing = []
+        all_paths = existing + missing
+        self.playlist_model = all_paths
+        self.original_order = list(all_paths)
+        self.source_m3u = m3u_path
+        self.m3u_name.set(m3u_path.stem)
         self._refresh_tree()
 
     def remove_selected(self):
@@ -578,10 +631,13 @@ class M3UCreatorApp(TkinterDnD.Tk):
         filename = raw_name if raw_name.lower().endswith(".m3u") else f"{raw_name}.m3u"
 
         if self.save_mode.get() == "manual":
+            initial = filename
+            if self.source_m3u and self.source_m3u.exists():
+                initial = str(self.source_m3u)
             selected = filedialog.asksaveasfilename(
                 defaultextension=".m3u",
                 filetypes=[("Listas M3U", "*.m3u")],
-                initialfile=filename,
+                initialfile=initial,
             )
             return Path(selected) if selected else None
 
