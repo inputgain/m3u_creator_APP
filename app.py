@@ -100,13 +100,22 @@ def write_m3u(lines: list[str], target_file: Path, confirm_overwrite: bool = Tru
 
 def find_usb_roots() -> list[Path]:
     removable = []
-    for letter in string.ascii_uppercase:
-        root = Path(f"{letter}:/")
-        if not root.exists():
-            continue
-        drive_type = ctypes.windll.kernel32.GetDriveTypeW(str(root))
-        if drive_type == 2:
-            removable.append(root)
+    if sys.platform == "win32":
+        for letter in string.ascii_uppercase:
+            root = Path(f"{letter}:/")
+            if not root.exists():
+                continue
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(str(root))
+            if drive_type == 2:
+                removable.append(root)
+    else:
+        import os
+        user = os.environ.get("USER", "")
+        for base in [Path(f"/media/{user}"), Path(f"/run/media/{user}"), Path("/mnt")]:
+            if base.is_dir():
+                for entry in base.iterdir():
+                    if entry.is_dir():
+                        removable.append(entry)
     return removable
 
 
