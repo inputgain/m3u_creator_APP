@@ -18,6 +18,8 @@ Desktop app in Python to build `.m3u` playlists from drag-and-drop files/folders
   - Manual location (file dialog).
   - USB root (auto-detected removable drives).
 - Output with UTF-8 and overwrite confirmation.
+- Load existing M3U files — open, parse, detect missing tracks with confirmation dialog, default to overwrite original on save.
+- USB auto-detection on both Windows (drive letters) and Linux (`/media/$USER`, `/run/media/$USER`, `/mnt`).
 
 ## Install
 
