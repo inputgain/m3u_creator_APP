@@ -176,6 +176,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         style.configure("Pista.TLabel", foreground="#355070", background="#f7fbff")
         style.configure("Total.TLabel", foreground="#1d3557", background="#eaf3ff", font=("Segoe UI", 10, "bold"))
         style.configure("Guardar.TButton", font=("Segoe UI", 11, "bold"), padding=(16, 8))
+        style.map("TCombobox", fieldbackground=[("disabled", "#d9d9d9")], foreground=[("disabled", "#888888")])
 
         style.configure(
             "Treeview",
@@ -191,6 +192,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         actions = ttk.Frame(main, style="Main.TFrame")
         actions.pack(fill="x", pady=(0, 6))
 
+        ttk.Button(actions, text="🆕 Nuevo", command=self.new_playlist).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="📂 Abrir M3U", command=self.load_m3u).pack(side="left", padx=(0, 12))
         ttk.Button(actions, text="✖ Eliminar", command=self.remove_selected).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="▲ Subir", command=self.move_up).pack(side="left", padx=(0, 6))
@@ -245,6 +247,8 @@ class M3UCreatorApp(TkinterDnD.Tk):
 
         self.insert_line = tk.Frame(self.tree, bg="#1b9aaa", height=2)
 
+        self.tree.tag_configure('warn', foreground='#cc0000')
+
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self.tree.bind("<ButtonPress-1>", self._on_drag_start)
         self.tree.bind("<B1-Motion>", self._on_drag_motion)
@@ -277,7 +281,8 @@ class M3UCreatorApp(TkinterDnD.Tk):
         ttk.Label(usb_row, text="USB:").pack(side="left")
         self.usb_combo = ttk.Combobox(usb_row, textvariable=self.usb_var, state="readonly", width=18)
         self.usb_combo.pack(side="left", padx=(6, 6))
-        ttk.Button(usb_row, text="Actualizar USB", command=self.refresh_usb_list).pack(side="left")
+        self.refresh_usb_btn = ttk.Button(usb_row, text="Actualizar USB", command=self.refresh_usb_list)
+        self.refresh_usb_btn.pack(side="left")
 
         name_row = ttk.Frame(save_cfg)
         name_row.pack(fill="x")
@@ -314,12 +319,27 @@ class M3UCreatorApp(TkinterDnD.Tk):
         items = self.tree.selection()
         return sorted(int(i) for i in items)
 
+    @staticmethod
+    def _find_non_ascii_chars(text: str) -> list[str]:
+        chars = set()
+        for ch in text:
+            if ord(ch) > 127:
+                chars.add(ch)
+        return sorted(chars, key=ord)
+
     def _refresh_tree(self):
         selected_before = set(self._selected_indices())
         self.tree.delete(*self.tree.get_children())
         for i, path in enumerate(self.playlist_model):
             check = "✓" if i in selected_before else ""
-            self.tree.insert("", "end", iid=str(i), values=(check, f"{i + 1:03d}", self._display_path(path)))
+            display = self._display_path(path)
+            warn_chars = self._find_non_ascii_chars(display)
+            if warn_chars:
+                chars_str = " | ".join(warn_chars)
+                display += f"  ]- ⚠ caracter NO ASCII: {chars_str}"
+                self.tree.insert("", "end", iid=str(i), values=(check, f"{i + 1:03d}", display), tags=('warn',))
+            else:
+                self.tree.insert("", "end", iid=str(i), values=(check, f"{i + 1:03d}", display))
 
         for idx in selected_before:
             if idx < len(self.playlist_model):
@@ -355,17 +375,20 @@ class M3UCreatorApp(TkinterDnD.Tk):
     def _on_drop(self, event):
         self._set_drop_idle()
         dropped = parse_drop_files(event.data)
-        new_files = collect_mp3_from_inputs(dropped)
-        if not new_files:
-            messagebox.showinfo("Sin MP3", "No se encontraron archivos .mp3 en los elementos arrastrados.")
-            return
-        self.original_order.extend(new_files)
-        if self.shuffle_mode.get():
-            self.playlist_model.extend(new_files)
-            random.shuffle(self.playlist_model)
-        else:
-            self.playlist_model.extend(new_files)
-        self._refresh_tree()
+        m3u_files = [p for p in dropped if p.suffix.lower() == ".m3u"]
+        if m3u_files:
+            self._load_m3u_from_path(m3u_files[0])
+        other = [p for p in dropped if p.suffix.lower() != ".m3u"]
+        if other:
+            new_files = collect_mp3_from_inputs(other)
+            if new_files:
+                self.original_order.extend(new_files)
+                if self.shuffle_mode.get():
+                    self.playlist_model.extend(new_files)
+                    random.shuffle(self.playlist_model)
+                else:
+                    self.playlist_model.extend(new_files)
+                self._refresh_tree()
 
     def _show_missing_files_dialog(self, missing: list[Path]) -> bool:
         """Show dialog for missing files. Returns True to keep them, False to remove."""
@@ -379,13 +402,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         msg += "\nDesea mantenerlos en la playlist?"
         return messagebox.askyesno("Archivos faltantes", msg, icon="warning")
 
-    def load_m3u(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("Listas M3U", "*.m3u"), ("Todos los archivos", "*.*")],
-        )
-        if not path:
-            return
-        m3u_path = Path(path)
+    def _load_m3u_from_path(self, m3u_path: Path):
         existing, missing = parse_m3u_file(m3u_path)
         if not existing and not missing:
             messagebox.showinfo("Vacia", "El archivo M3U esta vacio o no contiene pistas validas.")
@@ -400,6 +417,14 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self.source_m3u = m3u_path
         self.m3u_name.set(m3u_path.stem)
         self._refresh_tree()
+
+    def load_m3u(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Listas M3U", "*.m3u"), ("Todos los archivos", "*.*")],
+        )
+        if not path:
+            return
+        self._load_m3u_from_path(Path(path))
 
     def remove_selected(self):
         selected = self._selected_indices()
@@ -597,6 +622,17 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self._update_selection_checks()
         self.context_menu.tk_popup(event.x_root, event.y_root)
 
+    def new_playlist(self):
+        if self.playlist_model:
+            ok = messagebox.askyesno("Nueva lista", "Se borrarán todas las entradas. Continuar?")
+            if not ok:
+                return
+        self.playlist_model = []
+        self.original_order = []
+        self.source_m3u = None
+        self.m3u_name.set("lista")
+        self._refresh_tree()
+
     def toggle_shuffle(self):
         if self.shuffle_mode.get():
             self.playlist_model = list(self.playlist_model)
@@ -618,6 +654,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
     def _refresh_usb_state(self):
         state = "normal" if self.save_mode.get() == "usb" else "disabled"
         self.usb_combo.configure(state=state)
+        self.refresh_usb_btn.configure(state=state)
 
     def _clear_selection_event(self, _event):
         self.tree.selection_remove(self.tree.selection())
