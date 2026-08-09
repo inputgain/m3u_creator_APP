@@ -16,7 +16,7 @@ except ImportError:
         "Falta la dependencia 'tkinterdnd2'. Instala con: pip install -r requirements.txt"
     )
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 LANG = {
     "es": {
@@ -89,6 +89,8 @@ LANG = {
         "mb_nousb_msg": "No hay USB seleccionado. Conecta uno o usa ubicacion manual.",
         "mb_emptylist_title": "Lista vacia",
         "mb_emptylist_msg": "Agrega al menos un .mp3 antes de generar.",
+        "mb_already_exists": "Ya existe: {name}",
+        "mb_folder_error": "Error carpeta {name}:\n  {error}",
         "mb_done_title": "Listo",
         "mb_done_msg": "Lista creada:\n{target}",
         "about_title": "Acerca de",
@@ -168,6 +170,8 @@ LANG = {
         "mb_nousb_msg": "No USB selected. Connect one or use manual location.",
         "mb_emptylist_title": "Empty playlist",
         "mb_emptylist_msg": "Add at least one .mp3 before generating.",
+        "mb_already_exists": "Already exists: {name}",
+        "mb_folder_error": "Folder error {name}:\n  {error}",
         "mb_done_title": "Done",
         "mb_done_msg": "Playlist created:\n{target}",
         "about_title": "About",
@@ -291,6 +295,12 @@ def find_usb_roots() -> list[Path]:
             drive_type = ctypes.windll.kernel32.GetDriveTypeW(str(root))
             if drive_type == 2:
                 removable.append(root)
+    elif sys.platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            for entry in volumes.iterdir():
+                if entry.is_dir():
+                    removable.append(entry)
     else:
         import os
         user = os.environ.get("USER", "")
@@ -572,10 +582,11 @@ class M3UCreatorApp(TkinterDnD.Tk):
         title_frame = tk.Frame(dlg, bg="#eaf3ff")
         title_frame.pack(pady=(20, 4))
 
-        about_icon = self._icon_img.subsample(21, 21)
-        icon_label = tk.Label(title_frame, image=about_icon, bg="#eaf3ff")
-        icon_label.image = about_icon
-        icon_label.pack(side="left", padx=(0, 8))
+        if hasattr(self, "_icon_img"):
+            about_icon = self._icon_img.subsample(21, 21)
+            icon_label = tk.Label(title_frame, image=about_icon, bg="#eaf3ff")
+            icon_label.image = about_icon
+            icon_label.pack(side="left", padx=(0, 8))
 
         ttk.Label(title_frame, text="m3u Creator App", font=("Segoe UI", 16, "bold"),
                   background="#eaf3ff", foreground="#1d3557").pack(side="left")
@@ -724,8 +735,9 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self._refresh_tree()
 
     def load_m3u(self):
+        t = LANG[self.lang.get()]
         path = filedialog.askopenfilename(
-            filetypes=[("Listas M3U", "*.m3u"), ("Todos los archivos", "*.*")],
+            filetypes=[(t["file_filter_m3u"], "*.m3u"), (t["file_filter_all"], "*.*")],
         )
         if not path:
             return
@@ -1271,7 +1283,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
                     # print(f"Phase 2 MOVED: {od} -> {nd}")
                 except OSError as e:
                     # print(f"Phase 2 ERROR: {od} -> {e}")
-                    errors.append(f"Error carpeta {od.name}:\n  {e}")
+                    errors.append(LANG[self.lang.get()]["mb_folder_error"].format(name=od.name, error=e))
 
             # print(f"\nPhase 3: {len(fix_entries)} entries")
             for fe in fix_entries:
@@ -1311,7 +1323,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
                     if current_path.name != new_path.name:
                         dst = current_path.parent / new_path.name
                         if dst.exists():
-                            errors.append(f"{fe.orig_str}:\n  Ya existe: {dst.name}")
+                            errors.append(f"{fe.orig_str}:\n  {LANG[self.lang.get()]['mb_already_exists'].format(name=dst.name)}")
                             continue
                         shutil.move(str(current_path), str(dst))
                         # print(f"  [{fe.idx}] RENAMED: {current_path.name} -> {dst.name}")
@@ -1401,15 +1413,15 @@ class M3UCreatorApp(TkinterDnD.Tk):
         return Path(usb) / filename
 
     def generate_m3u(self):
+        t = LANG[self.lang.get()]
         if not self.playlist_model:
-            messagebox.showerror("Lista vacia", "Agrega al menos un .mp3 antes de generar.")
+            messagebox.showerror(t["mb_emptylist_title"], t["mb_emptylist_msg"])
             return
         target = self._resolve_output_file()
         if not target:
             return
 
         lines = to_relative_m3u_lines(self.playlist_model, target.parent)
-        t = LANG[self.lang.get()]
         if write_m3u(lines, target, confirm_overwrite=True, lang=self.lang.get()):
             messagebox.showinfo(t["mb_done_title"], t["mb_done_msg"].format(target=target))
 
