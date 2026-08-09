@@ -3,8 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](https://github.com/inputgain/m3u_creator_APP/releases)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me%20on%20Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/L3L11XAA7Y)
 
 Desktop app in Python to build `.m3u` playlists from drag-and-drop files/folders.
+
+![Screenshot](assets/screenshot.png)
 
 ## Features
 
@@ -42,10 +45,12 @@ python app.py
 ## Build Executable
 
 ```powershell
-py -m PyInstaller --onefile --noconsole --icon="assets\app_icon.ico" --name "M3U Creator App" --hidden-import tkinterdnd2 --add-data "assets;assets" --collect-all tkinterdnd2 app.py
+py build.py
 ```
 
-Output: `dist\M3U Creator App.exe`
+The script reads the version from `app.py` and generates the .exe with embedded version info.
+
+Output: `dist\M3U Creator App v{version}.exe`
 
 ## Notes
 

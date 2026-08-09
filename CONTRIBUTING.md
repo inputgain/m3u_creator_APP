@@ -22,10 +22,12 @@ python app.py
 ## Build Executable
 
 ```powershell
-py -m PyInstaller --onefile --noconsole --icon="assets\app_icon.ico" --name "M3U Creator App" --hidden-import tkinterdnd2 --add-data "assets;assets" --collect-all tkinterdnd2 app.py
+py build.py
 ```
 
-Output: `dist\M3U Creator App.exe`
+The script reads `__version__` from `app.py` and generates the .exe with embedded version info.
+
+Output: `dist\M3U Creator App v{version}.exe`
 
 ## Code Notes
 
