@@ -16,7 +16,7 @@ except ImportError:
         "Falta la dependencia 'tkinterdnd2'. Instala con: pip install -r requirements.txt"
     )
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 
 LANG = {
     "es": {
@@ -72,7 +72,10 @@ LANG = {
         "mb_overwrite_title": "Sobrescribir",
         "mb_overwrite_msg": "{name} ya existe. Quieres reemplazarlo?",
         "mb_missing_title": "Archivos faltantes",
-        "mb_missing_msg": "Se encontraron archivos que no existen:\n\n{list}\n ... y {n} mas\n\nDesea mantenerlos en la playlist?",
+        "mb_missing_msg": "Se encontraron archivos que no existen:\n\n{list}\nDesea mantenerlos en la playlist?",
+        "mb_missing_more": " ... y {n} mas\n",
+        "mb_write_error_title": "Error al guardar",
+        "mb_write_error_msg": "No se pudo guardar la lista:\n{error}",
         "mb_empty_title": "Vacia",
         "mb_empty_msg": "El archivo M3U esta vacio o no contiene pistas validas.",
         "mb_newlist_title": "Nueva lista",
@@ -99,6 +102,8 @@ LANG = {
         "about_license": "Licencia MIT",
         "btn_close": "Cerrar",
         "lang_btn": "EN",
+        "tip_lang": "Cambiar idioma",
+        "default_name": "lista",
     },
     "en": {
         "window_title": "m3u Creator App",
@@ -153,7 +158,10 @@ LANG = {
         "mb_overwrite_title": "Overwrite",
         "mb_overwrite_msg": "{name} already exists. Do you want to replace it?",
         "mb_missing_title": "Missing files",
-        "mb_missing_msg": "The following files were not found:\n\n{list}\n ... and {n} more\n\nKeep them in the playlist?",
+        "mb_missing_msg": "The following files were not found:\n\n{list}\nKeep them in the playlist?",
+        "mb_missing_more": " ... and {n} more\n",
+        "mb_write_error_title": "Save error",
+        "mb_write_error_msg": "Could not save the playlist:\n{error}",
         "mb_empty_title": "Empty",
         "mb_empty_msg": "The M3U file is empty or contains no valid tracks.",
         "mb_newlist_title": "New playlist",
@@ -180,6 +188,8 @@ LANG = {
         "about_license": "MIT License",
         "btn_close": "Close",
         "lang_btn": "ES",
+        "tip_lang": "Switch language",
+        "default_name": "playlist",
     },
 }
 
@@ -237,52 +247,64 @@ def collect_mp3_from_inputs(inputs: list[Path]) -> list[Path]:
             collected.append(item.resolve())
             continue
         if item.is_dir():
-            found = [p.resolve() for p in item.rglob("*.mp3") if p.is_file()]
+            found = [
+                p.resolve() for p in item.rglob("*")
+                if p.is_file() and p.suffix.lower() == ".mp3"
+            ]
             collected.extend(sort_natural_by_relative_path(found, item.resolve()))
     return collected
 
 
 def to_relative_m3u_lines(model_paths: list[Path], m3u_dir: Path) -> list[str]:
     lines = []
+    base = m3u_dir.resolve()
     for path in model_paths:
         p = Path(path).resolve()
         try:
-            rel = p.relative_to(m3u_dir.resolve())
+            rel = p.relative_to(base)
         except ValueError:
-            rel = Path(p.relative_to(Path(p.anchor)))
+            lines.append(p.as_posix())
+            continue
         lines.append(rel.as_posix())
     return lines
 
 
 def write_m3u(lines: list[str], target_file: Path, confirm_overwrite: bool = True, lang: str = "es"):
+    t = LANG[lang]
     if target_file.exists() and confirm_overwrite:
-        t = LANG[lang]
         overwrite = messagebox.askyesno(
             t["mb_overwrite_title"],
             t["mb_overwrite_msg"].format(name=target_file.name),
         )
         if not overwrite:
             return False
-    target_file.parent.mkdir(parents=True, exist_ok=True)
-    target_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        messagebox.showerror(t["mb_write_error_title"], t["mb_write_error_msg"].format(error=e))
+        return False
     return True
 
 
 def parse_m3u_file(m3u_path: Path) -> tuple[list[Path], list[Path]]:
-    """Parse an M3U file and return (existing_paths, missing_paths)."""
+    """Parse an M3U file and return (all_paths_in_file_order, missing_paths)."""
+    try:
+        text = m3u_path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        text = m3u_path.read_text(encoding="latin-1")
     m3u_dir = m3u_path.resolve().parent
-    existing = []
+    all_paths = []
     missing = []
-    for line in m3u_path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         resolved = (m3u_dir / line).resolve()
-        if resolved.exists():
-            existing.append(resolved)
-        else:
+        all_paths.append(resolved)
+        if not resolved.exists():
             missing.append(resolved)
-    return existing, missing
+    return all_paths, missing
 
 
 def find_usb_roots() -> list[Path]:
@@ -376,7 +398,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self.original_order: list[Path] = []
         self.shuffle_mode = tk.BooleanVar(value=False)
         self.save_mode = tk.StringVar(value="manual")
-        self.m3u_name = tk.StringVar(value="lista")
+        self.m3u_name = tk.StringVar(value=t["default_name"])
         self.usb_var = tk.StringVar(value="")
         self.count_text = tk.StringVar(value=t["count_fmt"].format(count=0))
         self.source_m3u: Path | None = None
@@ -457,7 +479,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
 
         btn_lang = ttk.Button(actions, text=t["lang_btn"], command=self._toggle_language, width=3)
         btn_lang.pack(side="right", padx=(0, 6))
-        ToolTip(btn_lang, "Switch language")
+        ToolTip(btn_lang, t["tip_lang"])
 
         list_frame = ttk.LabelFrame(main, text=t["frame_list"], padding=8, style="Card.TLabelframe")
         list_frame.pack(fill="both", expand=True)
@@ -564,10 +586,14 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self.lang.set("en" if current == "es" else "es")
 
     def _change_language(self):
+        selected = [i for i in self._selected_indices() if i < len(self.playlist_model)]
         for w in self.winfo_children():
             w.destroy()
         self._build_ui()
         self._refresh_tree()
+        if selected:
+            self.tree.selection_set([str(i) for i in selected])
+            self._update_selection_checks()
 
     def _show_about(self):
         t = LANG[self.lang.get()]
@@ -696,13 +722,19 @@ class M3UCreatorApp(TkinterDnD.Tk):
         other = [p for p in dropped if p.suffix.lower() != ".m3u"]
         if other:
             new_files = collect_mp3_from_inputs(other)
-            if new_files:
-                self.original_order.extend(new_files)
+            seen = set(self.playlist_model)
+            unique_files = []
+            for p in new_files:
+                if p not in seen:
+                    seen.add(p)
+                    unique_files.append(p)
+            if unique_files:
+                self.original_order.extend(unique_files)
                 if self.shuffle_mode.get():
-                    self.playlist_model.extend(new_files)
+                    self.playlist_model.extend(unique_files)
                     random.shuffle(self.playlist_model)
                 else:
-                    self.playlist_model.extend(new_files)
+                    self.playlist_model.extend(unique_files)
                 self._refresh_tree()
 
     def _show_missing_files_dialog(self, missing: list[Path]) -> bool:
@@ -714,20 +746,22 @@ class M3UCreatorApp(TkinterDnD.Tk):
         for p in missing[:15]:
             msg += f"  - {p}\n"
         n = len(missing) - 15
-        full_msg = t["mb_missing_msg"].format(list=msg, n=n)
+        if n > 0:
+            msg += t["mb_missing_more"].format(n=n)
+        full_msg = t["mb_missing_msg"].format(list=msg)
         return messagebox.askyesno(t["mb_missing_title"], full_msg, icon="warning")
 
     def _load_m3u_from_path(self, m3u_path: Path):
-        existing, missing = parse_m3u_file(m3u_path)
-        if not existing and not missing:
+        all_paths, missing = parse_m3u_file(m3u_path)
+        if not all_paths:
             t = LANG[self.lang.get()]
             messagebox.showinfo(t["mb_empty_title"], t["mb_empty_msg"])
             return
         if missing:
             keep = self._show_missing_files_dialog(missing)
             if not keep:
-                missing = []
-        all_paths = existing + missing
+                missing_set = set(missing)
+                all_paths = [p for p in all_paths if p not in missing_set]
         self.playlist_model = all_paths
         self.original_order = list(all_paths)
         self.source_m3u = m3u_path
@@ -958,7 +992,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
         self.playlist_model = []
         self.original_order = []
         self.source_m3u = None
-        self.m3u_name.set("lista")
+        self.m3u_name.set(LANG[self.lang.get()]["default_name"])
         self._refresh_tree()
 
     def toggle_shuffle(self):
@@ -1269,21 +1303,38 @@ class M3UCreatorApp(TkinterDnD.Tk):
             #     print(f"  {od} -> {nd}")
 
             dir_done: dict[Path, Path] = {}
-            for od, nd in sorted(dir_moves, key=lambda kv: len(kv[0].parts), reverse=True):
-                if not od.exists():
-                    # print(f"Phase 2 SKIP (not exists): {od}")
-                    dir_done[od] = nd
+
+            def remap_through(path: Path) -> Path:
+                for _ in range(len(dir_done)):
+                    for od, nd in dir_done.items():
+                        try:
+                            rel = path.relative_to(od)
+                        except ValueError:
+                            continue
+                        new = nd / rel
+                        if new == path:
+                            continue
+                        path = new
+                        break
+                    else:
+                        break
+                return path
+
+            for od, nd in sorted(dir_moves, key=lambda kv: len(kv[0].parts)):
+                actual_od = remap_through(od)
+                if actual_od == nd:
                     continue
                 if nd.exists():
-                    # print(f"Phase 2 SKIP (target exists): {od} -> {nd}")
+                    if actual_od.exists():
+                        errors.append(LANG[self.lang.get()]["mb_already_exists"].format(name=nd))
                     continue
-                try:
-                    shutil.move(str(od), str(nd))
-                    dir_done[od] = nd
-                    # print(f"Phase 2 MOVED: {od} -> {nd}")
-                except OSError as e:
-                    # print(f"Phase 2 ERROR: {od} -> {e}")
-                    errors.append(LANG[self.lang.get()]["mb_folder_error"].format(name=od.name, error=e))
+                if actual_od.exists():
+                    try:
+                        shutil.move(str(actual_od), str(nd))
+                    except OSError as e:
+                        errors.append(LANG[self.lang.get()]["mb_folder_error"].format(name=od.name, error=e))
+                        continue
+                dir_done[actual_od] = nd
 
             # print(f"\nPhase 3: {len(fix_entries)} entries")
             for fe in fix_entries:
@@ -1296,14 +1347,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
                 if fe.orig_path.resolve() == new_path.resolve():
                     continue
 
-                current_path = fe.orig_path
-                for od, nd in dir_done.items():
-                    try:
-                        rel = current_path.relative_to(od)
-                        current_path = nd / rel
-                        break
-                    except ValueError:
-                        continue
+                current_path = remap_through(fe.orig_path)
 
                 if current_path.resolve() == new_path.resolve():
                     # print(f"  [{fe.idx}] SKIP (same): {current_path.name}")
@@ -1344,13 +1388,7 @@ class M3UCreatorApp(TkinterDnD.Tk):
 
             if dir_done:
                 for i, p in enumerate(self.playlist_model):
-                    for od, nd in dir_done.items():
-                        try:
-                            rel = p.relative_to(od)
-                            self.playlist_model[i] = nd / rel
-                            break
-                        except (ValueError, TypeError):
-                            continue
+                    self.playlist_model[i] = remap_through(p)
 
             old_dirs = set()
             for idx, p in orig_paths.items():
@@ -1422,7 +1460,8 @@ class M3UCreatorApp(TkinterDnD.Tk):
             return
 
         lines = to_relative_m3u_lines(self.playlist_model, target.parent)
-        if write_m3u(lines, target, confirm_overwrite=True, lang=self.lang.get()):
+        confirm_overwrite = self.save_mode.get() != "manual"
+        if write_m3u(lines, target, confirm_overwrite=confirm_overwrite, lang=self.lang.get()):
             messagebox.showinfo(t["mb_done_title"], t["mb_done_msg"].format(target=target))
 
 

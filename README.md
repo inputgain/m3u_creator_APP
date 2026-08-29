@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](https://github.com/inputgain/m3u_creator_APP/releases)
+[![Version](https://img.shields.io/badge/version-1.5.2-green.svg)](https://github.com/inputgain/m3u_creator_APP/releases)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me%20on%20Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/L3L11XAA7Y)
 
 Desktop app in Python to build `.m3u` playlists from drag-and-drop files/folders.
@@ -56,7 +56,7 @@ Output: `dist\M3U Creator App v{version}.exe`
 
 - The app currently includes only `.mp3` files.
 - Playlist lines are normalized with `/`.
-- If a track is outside the target `.m3u` directory tree, the app writes a path rooted from the drive root (without drive letter), to keep portable-style output.
+- If a track is outside the target `.m3u` directory tree (e.g. on another drive), the app writes its absolute path.
 
 ## Contributing
 
